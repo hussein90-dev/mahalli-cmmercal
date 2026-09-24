@@ -1,1 +1,409 @@
-const DB='mahalliDB',VER=3;let db,route={p:'home',id:null};const $=s=>document.querySelector(s),money=n=>Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}),uid=p=>p+'_'+Date.now()+'_'+Math.random().toString(36).slice(2),now=()=>{let d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`};function openDB(){return new Promise((ok,no)=>{let r=indexedDB.open(DB,VER);r.onupgradeneeded=e=>{let d=e.target.result;['companies','customers','requests','payments','suppliers','purchases','expenses','trash','settings','meta'].forEach(s=>{if(!d.objectStoreNames.contains(s))d.createObjectStore(s,{keyPath:'id'})})};r.onsuccess=()=>{db=r.result;ok()};r.onerror=()=>no(r.error)})}function all(s){return new Promise((ok,no)=>{let r=db.transaction(s).objectStore(s).getAll();r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})}function get(s,id){return new Promise((ok,no)=>{let r=db.transaction(s).objectStore(s).get(id);r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})}function put(s,x){return new Promise((ok,no)=>{let r=db.transaction(s,'readwrite').objectStore(s).put(x);r.onsuccess=()=>ok(x);r.onerror=()=>no(r.error)})}function del(s,id){return new Promise((ok,no)=>{let r=db.transaction(s,'readwrite').objectStore(s).delete(id);r.onsuccess=ok;r.onerror=()=>no(r.error)})}async function seq(k,p){let x=await get('meta',k),n=(x?.v||0)+1;await put('meta',{id:k,v:n});return p+String(n).padStart(4,'0')}function toast(t){let x=$('#toast');x.textContent=t;x.classList.add('show');setTimeout(()=>x.classList.remove('show'),1800)}function go(p,id=null){route={p,id};render()}$('#home').onclick=()=>go('home');$('#back').onclick=()=>go('home');async function render(){if(!db)return;$('#back').classList.toggle('hide',route.p==='home');$('#home').classList.toggle('hide',route.p==='home');let a=$('#app');if(route.p==='home')return home(a);if(route.p==='companies')return companies(a);if(route.p==='company')return company(a,route.id);if(route.p==='customer')return customer(a,route.id);if(route.p==='requests')return requests(a,route.id);if(route.p==='payments')return payments(a);if(route.p==='expenses')return expenses(a);if(route.p==='suppliers')return suppliers(a);a.innerHTML='<div class="empty">هذه الوحدة ستُستكمل في المرحلة التالية.</div>'}function home(a){a.innerHTML='<div class="title">محلّي</div><div class="grid">'+[['🏢','الشركات والعملاء','companies'],['🛒','المشتريات','later'],['🏭','الموردون','suppliers'],['💸','المصروفات','expenses'],['💰','الدفعات','payments'],['📊','التقارير','later'],['🔍','البحث','later'],['⚙️','الإعدادات والنسخ الاحتياطي','later']].map(x=>`<button class="tile" onclick="go('${x[2]}')"><span class="emoji">${x[0]}</span>${x[1]}</button>`).join('')+'</div>'}async function companies(a){let cs=(await all('companies')).sort((x,y)=>y.createdAt?.localeCompare(x.createdAt));a.innerHTML='<div class="head"><h2>الشركات والعملاء</h2><button class="btn primary" onclick="editCompany()">＋ إضافة</button></div><input class="search" placeholder="بحث باسم الشركة" oninput="this.value;document.querySelectorAll('[data-name]').forEach(x=>x.style.display=x.dataset.name.includes(this.value.trim().toLowerCase())?'':'none')">'+(cs.length?cs.map(c=>`<div class="card" data-name="${c.name.toLowerCase()}"><div class="row"><b>${c.name}</b><span class="money">${money(c.totalUSD)} $</span></div><div class="muted">${c.phone||''}</div><div class="actions"><button class="btn light" onclick="go('company','${c.id}')">فتح</button><button class="btn light" onclick="editCompany('${c.id}')">تعديل</button><button class="btn danger" onclick="removeRecord('companies','${c.id}','شركة')">حذف</button></div></div>`).join(''):'<div class="empty">لا توجد شركات.</div>')}async function editCompany(id){let c=id?await get('companies',id):{};let a=$('#app');a.innerHTML=`<div class="head"><h2>${id?'تعديل شركة':'إضافة شركة'}</h2></div><div class="form"><div class="field"><label>اسم الشركة *</label><input id="n" value="${c.name||''}"></div><div class="field"><label>الهاتف</label><input id="p" value="${c.phone||''}"></div><div class="field"><label>العنوان</label><input id="ad" value="${c.address||''}"></div><div class="field"><label>ملاحظات</label><textarea id="no">${c.notes||''}</textarea></div><div class="form-actions"><button class="btn light" onclick="go('companies')">إلغاء</button><button class="btn primary" onclick="saveCompany('${id||''}')">حفظ</button></div></div>`}async function saveCompany(id){let n=$('#n').value.trim();if(!n)return toast('اسم الشركة مطلوب');let o=id?await get('companies',id):null;await put('companies',{id:id||uid('company'),name:n,phone:$('#p').value.trim(),address:$('#ad').value.trim(),notes:$('#no').value.trim(),totalUSD:o?.totalUSD||0,totalIQD:o?.totalIQD||0,createdAt:o?.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()});toast('تم الحفظ');go('companies')}async function removeRecord(s,id,label){if(!confirm(`حذف ${label}؟ سيتم نقله إلى سلة المحذوفات.`))return;let x=await get(s,id);await put('trash',{id:uid('trash'),type:s,originalId:id,deletedAt:new Date().toISOString(),data:x});await del(s,id);toast('تم الحذف');render()}async function company(a,id){let c=await get('companies',id),cs=(await all('customers')).filter(x=>x.companyId===id);a.innerHTML=`<div class="head"><h2>${c.name}</h2><button class="btn light" onclick="editCompany('${id}')">تعديل</button></div><div class="totals"><div class="total">USD<strong>${money(c.totalUSD)} $</strong></div><div class="total">IQD<strong>${money(c.totalIQD)} د.ع</strong></div></div><div class="actions"><button class="btn primary" onclick="editCustomer('${id}')">＋ إضافة عميل</button><button class="btn success" onclick="addCompanyPayment('${id}')">💰 دفعة للشركة</button></div><h3>العملاء</h3>${cs.length?cs.map(x=>`<div class="card"><div class="row"><b>${x.name}</b><button class="btn light" onclick="go('customer','${x.id}')">فتح</button></div></div>`).join(''):'<div class="empty">لا يوجد عملاء.</div>'}`}async function editCustomer(companyId,id){let c=id?await get('customers',id):{};$('#app').innerHTML=`<div class="head"><h2>${id?'تعديل عميل':'إضافة عميل'}</h2></div><div class="form"><div class="field"><label>اسم العميل *</label><input id="cn" value="${c.name||''}"></div><div class="field"><label>الهاتف</label><input id="cp" value="${c.phone||''}"></div><div class="field"><label>العنوان</label><input id="ca" value="${c.address||''}"></div><div class="field"><label>ملاحظات</label><textarea id="cm">${c.notes||''}</textarea></div><div class="form-actions"><button class="btn light" onclick="go('company','${companyId}')">إلغاء</button><button class="btn primary" onclick="saveCustomer('${companyId}','${id||''}')">حفظ</button></div></div>`}async function saveCustomer(companyId,id){let n=$('#cn').value.trim();if(!n)return toast('اسم العميل مطلوب');let o=id?await get('customers',id):null;await put('customers',{id:id||uid('customer'),name:n,phone:$('#cp').value.trim(),address:$('#ca').value.trim(),notes:$('#cm').value.trim(),companyId,accountNumber:o?.accountNumber||await seq('account','A'),accountStatus:o?.accountStatus||'مفتوح',createdAt:o?.createdAt||new Date().toISOString()});toast('تم حفظ العميل');go('company',companyId)}async function customer(a,id){let c=await get('customers',id),rs=(await all('requests')).filter(x=>x.customerId===id),ps=(await all('payments')).filter(x=>x.customerId===id),total=rs.reduce((s,x)=>s+x.totalUSD,0),paid=ps.reduce((s,x)=>s+x.usd,0);a.innerHTML=`<div class="head"><h2>${c.name}</h2><button class="btn light" onclick="editCustomer('${c.companyId}','${id}')">تعديل</button></div><div class="totals"><div class="total">الطلبات<strong>${money(total)} $</strong></div><div class="total">المتبقي<strong>${money(total-paid)} $</strong></div></div><div class="actions"><button class="btn primary" onclick="addRequest('${id}')">＋ إضافة طلب</button><button class="btn success" onclick="addCustomerPayment('${id}')">💰 إضافة دفعة</button></div><h3>الطلبات</h3>${rs.length?rs.map(r=>`<div class="card"><div class="row"><b>${r.number}</b><span>${r.product} — ${r.status}</span></div><div>${money(r.totalUSD)} $ | ${money(r.totalIQD)} د.ع</div></div>`).join(''):'<div class="empty">لا توجد طلبات.</div>'}`}async function addRequest(customerId){let c=await get('customers',customerId);$('#app').innerHTML=`<div class="head"><h2>إضافة طلب</h2></div><div class="form"><div class="muted">العميل: ${c.name}</div><div class="field"><label>المنتج</label><select id="rp"><option>كوارتز</option><option>مرمر</option></select></div><div class="field"><label>الكود/النوع</label><input id="rc"></div><div class="field"><label>عدد الأمتار</label><input id="rm" type="number" step="0.01" min="0"></div><div class="field"><label>سعر المتر USD</label><input id="rpr" type="number" step="0.01" min="0"></div><div class="field"><label>سعر الصرف</label><input id="rr" type="number" step="0.01" min="0"></div><div class="field"><label>الإكسسوارات: الاسم|الكمية|سعر الوحدة USD</label><textarea id="rac"></textarea></div><div class="field"><label>الحالة</label><select id="rs"><option>قيد التصنيع</option><option>جاهز</option><option>تم التسليم</option></select></div><div class="field"><label>التاريخ والوقت</label><input id="rd" type="datetime-local" value="${now()}"></div><div class="form-actions"><button class="btn light" onclick="go('customer','${customerId}')">إلغاء</button><button class="btn primary" onclick="saveRequest('${customerId}')">حفظ</button></div></div>`}async function saveRequest(cid){let m=+$('#rm').value,p=+$('#rpr').value,r=+$('#rr').value;if(!(m>0&&p>0&&r>0))return toast('تحقق من المتر والسعر وسعر الصرف');let ac=$('#rac').value.split('\n').filter(Boolean).map(s=>{let [name,qty,u]=s.split('|');return{name,qty:+qty,unitUSD:+u}}),au=ac.reduce((s,x)=>s+x.qty*x.unitUSD,0),pu=m*p,total=pu+au,c=await get('customers',cid);await put('requests',{id:uid('request'),number:await seq('request','#'),customerId:cid,companyId:c.companyId,product:$('#rp').value,code:$('#rc').value.trim(),meters:m,meterPriceUSD:p,rate:r,productUSD:pu,productIQD:pu*r,accessories:ac,accessoriesUSD:au,accessoriesIQD:au*r,totalUSD:total,totalIQD:total*r,status:$('#rs').value,dateTime:$('#rd').value,createdAt:new Date().toISOString()});await recalc(c.companyId);toast('تم حفظ الطلب');go('customer',cid)}async function recalc(companyId){if(!companyId)return;let c=await get('companies',companyId),rs=(await all('requests')).filter(x=>x.companyId===companyId),ps=(await all('payments')).filter(x=>x.companyId===companyId);c.totalUSD=rs.reduce((s,x)=>s+x.totalUSD,0)-ps.reduce((s,x)=>s+x.usd,0);c.totalIQD=rs.reduce((s,x)=>s+x.totalIQD,0)-ps.reduce((s,x)=>s+x.iqd,0);await put('companies',c)}async function payments(a){let ps=(await all('payments')).sort((x,y)=>y.dateTime.localeCompare(x.dateTime));a.innerHTML='<div class="head"><h2>الدفعات</h2></div>'+(ps.length?ps.map(p=>`<div class="card"><div class="row"><b>${p.number}</b><span>${p.type}</span></div><div>${money(p.usd)} $ | ${money(p.iqd)} د.ع</div></div>`).join(''):'<div class="empty">لا توجد دفعات.</div>')}async function addCustomerPayment(id){return paymentForm('customer',id)}async function addCompanyPayment(id){return paymentForm('company',id)}async function paymentForm(kind,id){let e=await get(kind==='customer'?'customers':'companies',id);$('#app').innerHTML=`<div class="head"><h2>إضافة دفعة</h2></div><div class="form"><div class="muted">${e.name}</div><div class="field"><label>المبلغ (عدد صحيح)</label><input id="pa" type="number" step="1" min="1"></div><div class="field"><label>العملة</label><select id="pc"><option>USD</option><option>IQD</option></select></div><div class="field"><label>سعر الصرف</label><input id="pr" type="number" step="0.01" min="0"></div><div class="field"><label>التاريخ والوقت</label><input id="pd" type="datetime-local" value="${now()}"></div><div class="field"><label>ملاحظات</label><textarea id="pn"></textarea></div><div class="form-actions"><button class="btn light" onclick="go('${kind==='customer'?'customer':'company'}','${id}')">إلغاء</button><button class="btn primary" onclick="savePayment('${kind}','${id}')">حفظ</button></div></div>`}async function savePayment(kind,id){let a=+$('#pa').value,r=+$('#pr').value;if(!(a>0&&Number.isInteger(a)&&r>0))return toast('المبلغ عدد صحيح وسعر الصرف أكبر من صفر');let cur=$('#pc').value,usd=cur==='USD'?a:a/r,iqd=cur==='USD'?a*r:a,c=kind==='customer'?await get('customers',id):null,companyId=kind==='company'?id:c?.companyId;await put('payments',{id:uid('payment'),number:await seq('payment','#P'),type:kind==='customer'?'دفعة عميل':'دفعة شركة',customerId:kind==='customer'?id:null,companyId,originalAmount:a,currency:cur,rate:r,usd,iqd,dateTime:$('#pd').value,notes:$('#pn').value.trim(),createdAt:new Date().toISOString()});await recalc(companyId);toast('تم حفظ الدفعة');go(kind==='customer'?'customer':'company',id)}async function expenses(a){let xs=(await all('expenses')).sort((x,y)=>y.dateTime.localeCompare(x.dateTime));a.innerHTML='<div class="head"><h2>المصروفات</h2><button class="btn primary" onclick="addExpense()">＋ إضافة</button></div>'+(xs.length?xs.map(x=>`<div class="card"><div class="row"><b>${x.number}</b><span>${x.type}</span></div><div>${money(x.usd)} $ | ${money(x.iqd)} د.ع</div><div class="muted">${x.dateTime}</div></div>`).join(''):'<div class="empty">لا توجد مصروفات.</div>')}async function addExpense(){let a=$('#app');a.innerHTML='<div class="head"><h2>إضافة مصروف</h2></div><div class="form"><div class="field"><label>النوع</label><input id="et" value="أخرى"></div><div class="field"><label>المبلغ</label><input id="ea" type="number" step="0.01" min="0"></div><div class="field"><label>العملة</label><select id="ec"><option>USD</option><option>IQD</option></select></div><div class="field"><label>سعر الصرف</label><input id="er" type="number" step="0.01" min="0"></div><div class="field"><label>التاريخ والوقت</label><input id="ed" type="datetime-local" value="${now()}"></div><div class="field"><label>ملاحظات</label><textarea id="en"></textarea></div><div class="form-actions"><button class="btn light" onclick="go('expenses')">إلغاء</button><button class="btn primary" onclick="saveExpense()">حفظ</button></div></div>`}async function saveExpense(){let a=+$('#ea').value,r=+$('#er').value;if(!(a>0&&r>0))return toast('أدخل المبلغ وسعر الصرف');let cur=$('#ec').value,usd=cur==='USD'?a:a/r,iqd=cur==='USD'?a*r:a;await put('expenses',{id:uid('expense'),number:await seq('expense','#E'),type:$('#et').value.trim()||'أخرى',originalAmount:a,currency:cur,rate:r,usd,iqd,dateTime:$('#ed').value,notes:$('#en').value.trim(),createdAt:new Date().toISOString()});toast('تم حفظ المصروف');go('expenses')}async function requests(a,id){let rs=(await all('requests')).filter(x=>x.customerId===id);a.innerHTML='<div class="head"><h2>الطلبات</h2></div>'+(rs.length?rs.map(x=>`<div class="card">${x.number} — ${x.product} — ${money(x.totalUSD)} $</div>`).join(''):'<div class="empty">لا توجد طلبات.</div>')}async function suppliers(a){let ss=await all('suppliers');a.innerHTML='<div class="head"><h2>الموردون</h2></div>'+(ss.length?ss.map(s=>`<div class="card"><b>${s.name}</b></div>`).join(''):'<div class="empty">قسم الموردين والمشتريات سيُبنى بعد إنهاء دورة الشركات والعملاء والدفعات.</div>')}openDB().then(render);if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(console.error);
+const DB_NAME = "mahalliDB";
+const DB_VERSION = 3;
+
+let db = null;
+let route = { name: "home", params: {} };
+let historyStack = [];
+
+const $ = (selector) => document.querySelector(selector);
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (m) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[m]));
+}
+
+function money(value) {
+  return Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function nowLocal() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function uid(prefix = "id") {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2,9)}`;
+}
+
+function toast(message) {
+  const el = $("#toast");
+  if (!el) return;
+  el.textContent = message;
+  el.classList.add("show");
+  setTimeout(() => el.classList.remove("show"), 2200);
+}
+
+function closeModal() {
+  const modal = $("#modal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  modal.innerHTML = "";
+}
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = (event) => {
+      const database = event.target.result;
+      const stores = ["companies","customers","suppliers","purchases","expenses","payments","requests","trash","settings","meta"];
+      stores.forEach((name) => {
+        if (!database.objectStoreNames.contains(name)) {
+          const store = database.createObjectStore(name, { keyPath: "id" });
+          store.createIndex("createdAt", "createdAt");
+        }
+      });
+    };
+    request.onsuccess = () => { db = request.result; resolve(db); };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function store(name, mode = "readonly") {
+  return db.transaction(name, mode).objectStore(name);
+}
+
+function getRecord(name, id) {
+  return new Promise((resolve, reject) => {
+    const request = store(name).get(id);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function getAll(name) {
+  return new Promise((resolve, reject) => {
+    const request = store(name).getAll();
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function putRecord(name, value) {
+  return new Promise((resolve, reject) => {
+    const request = store(name, "readwrite").put(value);
+    request.onsuccess = () => resolve(value);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function deleteRecord(name, id) {
+  return new Promise((resolve, reject) => {
+    const request = store(name, "readwrite").delete(id);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function nextNumber(key, prefix = "") {
+  const meta = await getRecord("meta", key);
+  const next = Number(meta?.value || 0) + 1;
+  await putRecord("meta", { id: key, value: next });
+  return `${prefix}${String(next).padStart(4, "0")}`;
+}
+
+function convertAmount(amount, currency, rate) {
+  const value = Number(amount || 0);
+  const exchangeRate = Number(rate || 0);
+  return currency === "USD"
+    ? { usd: value, iqd: value * exchangeRate }
+    : { usd: exchangeRate ? value / exchangeRate : 0, iqd: value };
+}
+
+function formatDate(value) {
+  if (!value) return "";
+  return new Date(value).toLocaleString("ar-IQ", { dateStyle: "medium", timeStyle: "short" });
+}
+
+function go(name, params = {}, push = true) {
+  if (push && route.name !== "home") historyStack.push({ ...route });
+  route = { name, params };
+  render();
+}
+
+function home() {
+  route = { name: "home", params: {} };
+  historyStack = [];
+  render();
+}
+
+function goBack() {
+  const previous = historyStack.pop();
+  if (previous) { route = previous; render(); } else home();
+}
+
+async function render() {
+  if (!db) return;
+  const app = $("#app");
+  if (!app) return;
+  $("#backBtn")?.classList.toggle("hidden", route.name === "home");
+  $("#homeBtn")?.classList.toggle("hidden", route.name === "home");
+  app.innerHTML = "";
+  switch (route.name) {
+    case "home": renderHome(app); break;
+    case "companies": await renderCompanies(app); break;
+    case "company": await renderCompany(app, route.params.id); break;
+    case "customer": await renderCustomer(app, route.params.id); break;
+    case "payments": await renderPayments(app); break;
+    case "expenses": await renderExpenses(app); break;
+    default: home();
+  }
+}
+
+function renderHome(app) {
+  app.innerHTML = `
+    <div class="home-title">محلّي</div>
+    <div class="home-grid">
+      <button class="home-card" onclick="go('companies')"><span class="emoji">🏢</span>الشركات والعملاء</button>
+      <button class="home-card" onclick="placeholder('المشتريات')"><span class="emoji">🛒</span>المشتريات</button>
+      <button class="home-card" onclick="placeholder('الموردون')"><span class="emoji">🏭</span>الموردون</button>
+      <button class="home-card" onclick="go('expenses')"><span class="emoji">💸</span>المصروفات</button>
+      <button class="home-card" onclick="go('payments')"><span class="emoji">💰</span>الدفعات</button>
+      <button class="home-card" onclick="placeholder('التقارير')"><span class="emoji">📊</span>التقارير</button>
+      <button class="home-card" onclick="placeholder('البحث')"><span class="emoji">🔍</span>البحث</button>
+      <button class="home-card" onclick="placeholder('الإعدادات والنسخ الاحتياطي')"><span class="emoji">⚙️</span>الإعدادات والنسخ الاحتياطي</button>
+    </div>`;
+}
+
+function placeholder(title) {
+  const modal = $("#modal");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  modal.innerHTML = `<div class="modal-box"><div class="modal-title">${esc(title)}</div><p class="muted">هذه الوحدة ستُستكمل في المرحلة التالية فوق قاعدة البيانات نفسها.</p><button class="btn btn-primary" onclick="closeModal()">حسنًا</button></div>`;
+}
+
+function filterCards(value, listId) {
+  const search = String(value || "").toLowerCase();
+  document.querySelectorAll(`#${listId} .searchable`).forEach((element) => {
+    const text = String(element.dataset.search || "").toLowerCase();
+    element.style.display = text.includes(search) ? "" : "none";
+  });
+}
+
+async function renderCompanies(app) {
+  const companies = (await getAll("companies")).sort((a,b) => String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
+  app.innerHTML = `
+    <div class="section-head"><div class="section-title">الشركات والعملاء</div><button class="btn btn-primary" onclick="companyForm()">＋ إضافة</button></div>
+    <input class="search" placeholder="بحث باسم الشركة" oninput="filterCards(this.value, 'company-list')">
+    <div id="company-list">${companies.length ? companies.map((c) => `
+      <div class="card searchable" data-search="${esc(c.name)}">
+        <div class="row"><div><strong>${esc(c.name)}</strong><div class="muted">${esc(c.phone||"")}</div></div><div class="amount">${money(c.totalUSD)} $<br>${money(c.totalIQD)} د.ع</div></div>
+        <div class="list-actions"><button class="btn btn-light" onclick="go('company',{id:'${c.id}'})">فتح</button><button class="btn btn-light" onclick="companyForm('${c.id}')">تعديل</button><button class="btn btn-danger" onclick="deleteCompany('${c.id}')">حذف</button></div>
+      </div>`).join("") : `<div class="empty">لا توجد شركات بعد.</div>`}</div>`;
+}
+
+function companyForm(id = "") { openCompanyModal(id); }
+
+async function openCompanyModal(id) {
+  const c = id ? await getRecord("companies", id) : {};
+  const modal = $("#modal");
+  modal.classList.remove("hidden");
+  modal.innerHTML = `
+    <div class="modal-box"><div class="modal-title">${id ? "تعديل الشركة" : "إضافة شركة"}</div>
+      <div class="field"><label>اسم الشركة *</label><input id="fName" value="${esc(c.name||"")}"></div>
+      <div class="field"><label>الهاتف</label><input id="fPhone" value="${esc(c.phone||"")}"></div>
+      <div class="field"><label>العنوان</label><input id="fAddress" value="${esc(c.address||"")}"></div>
+      <div class="field"><label>ملاحظات</label><textarea id="fNotes">${esc(c.notes||"")}</textarea></div>
+      <div class="form-actions"><button class="btn btn-light" onclick="closeModal()">إلغاء</button><button class="btn btn-primary" onclick="saveCompany('${id}')">حفظ</button></div>
+    </div>`;
+}
+
+async function saveCompany(id) {
+  const name = $("#fName").value.trim();
+  if (!name) { toast("اسم الشركة مطلوب"); return; }
+  const old = id ? await getRecord("companies", id) : null;
+  await putRecord("companies", {
+    id: id || uid("company"), name,
+    phone: $("#fPhone").value.trim(), address: $("#fAddress").value.trim(), notes: $("#fNotes").value.trim(),
+    createdAt: old?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString(),
+    totalUSD: old?.totalUSD || 0, totalIQD: old?.totalIQD || 0
+  });
+  closeModal(); toast("تم حفظ الشركة"); render();
+}
+
+async function deleteCompany(id) {
+  const c = await getRecord("companies", id);
+  if (!c) return;
+  if (!confirm("سيتم نقل الشركة إلى سلة المحذوفات. هل تريد المتابعة؟")) return;
+  await putRecord("trash", { id: uid("trash"), originalId: id, type: "company", deletedAt: new Date().toISOString(), data: c });
+  await deleteRecord("companies", id);
+  toast("تم نقل الشركة إلى سلة المحذوفات"); render();
+}
+
+async function renderCompany(app, id) {
+  const c = await getRecord("companies", id);
+  if (!c) { home(); return; }
+  const customers = (await getAll("customers")).filter((x) => x.companyId === id).sort((a,b) => String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
+  app.innerHTML = `
+    <div class="section-head"><div class="section-title">${esc(c.name)}</div><button class="btn btn-light" onclick="companyForm('${id}')">تعديل</button></div>
+    <div class="total-box"><div class="total">الدولار<strong>${money(c.totalUSD)} $</strong></div><div class="total">الدينار<strong>${money(c.totalIQD)} د.ع</strong></div></div>
+    <div class="actions" style="margin-bottom:12px"><button class="btn btn-primary" onclick="customerForm('${id}')">＋ إضافة عميل</button><button class="btn btn-primary" onclick="placeholder('إضافة طلب للشركة')">＋ إضافة طلب</button><button class="btn btn-success" onclick="paymentFormCompany('${id}')">💰 إضافة دفعة للشركة</button></div>
+    <input class="search" placeholder="بحث عن عميل" oninput="filterCards(this.value, 'customer-list')">
+    <div id="customer-list">${customers.length ? customers.map((x) => `
+      <div class="card searchable" data-search="${esc(x.name)}"><div class="row"><div><strong>${esc(x.name)}</strong><div class="muted">${esc(x.phone||"")}</div></div></div>
+      <div class="list-actions"><button class="btn btn-light" onclick="go('customer',{id:'${x.id}'})">فتح</button><button class="btn btn-light" onclick="customerForm('${id}','${x.id}')">تعديل</button></div></div>`).join("") : `<div class="empty">لا يوجد عملاء لهذه الشركة.</div>`}</div>`;
+}
+
+async function customerForm(companyId = "", customerId = "") {
+  const c = customerId ? await getRecord("customers", customerId) : {};
+  const modal = $("#modal"); modal.classList.remove("hidden");
+  modal.innerHTML = `
+    <div class="modal-box"><div class="modal-title">${customerId ? "تعديل العميل" : "إضافة عميل"}</div>
+      <div class="field"><label>اسم العميل *</label><input id="cuName" value="${esc(c.name||"")}"></div>
+      <div class="field"><label>الهاتف</label><input id="cuPhone" value="${esc(c.phone||"")}"></div>
+      <div class="field"><label>العنوان</label><input id="cuAddress" value="${esc(c.address||"")}"></div>
+      <div class="field"><label>ملاحظات</label><textarea id="cuNotes">${esc(c.notes||"")}</textarea></div>
+      <div class="form-actions"><button class="btn btn-light" onclick="closeModal()">إلغاء</button><button class="btn btn-primary" onclick="saveCustomer('${companyId}','${customerId}')">حفظ</button></div>
+    </div>`;
+}
+
+async function saveCustomer(companyId, id) {
+  const name = $("#cuName").value.trim();
+  if (!name) { toast("اسم العميل مطلوب"); return; }
+  const old = id ? await getRecord("customers", id) : null;
+  await putRecord("customers", {
+    id: id || uid("customer"), name,
+    phone: $("#cuPhone").value.trim(), address: $("#cuAddress").value.trim(), notes: $("#cuNotes").value.trim(),
+    companyId: companyId || old?.companyId || null,
+    accountNumber: old?.accountNumber || null, accountStatus: old?.accountStatus || "مفتوح",
+    createdAt: old?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString()
+  });
+  closeModal(); toast("تم حفظ العميل"); render();
+}
+
+async function renderCustomer(app, id) {
+  const c = await getRecord("customers", id);
+  if (!c) { home(); return; }
+  const requests = (await getAll("requests")).filter((x) => x.customerId === id).sort((a,b) => String(a.createdAt||"").localeCompare(String(b.createdAt||"")));
+  const payments = (await getAll("payments")).filter((x) => x.customerId === id).sort((a,b) => String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
+  const total = requests.reduce((s,x) => s + Number(x.totalUSD||0), 0);
+  const paid = payments.reduce((s,x) => s + Number(x.usd||0), 0);
+  const company = c.companyId ? await getRecord("companies", c.companyId) : null;
+  app.innerHTML = `
+    <div class="section-head"><div class="section-title">${esc(c.name)}</div><button class="btn btn-light" onclick="customerForm('${c.companyId||""}','${id}')">تعديل</button></div>
+    <div class="muted">${company ? `الشركة: ${esc(company.name)}` : "عميل مستقل"}</div>
+    <div class="total-box"><div class="total">إجمالي الطلبات<strong>${money(total)} $</strong></div><div class="total">المتبقي<strong>${money(total-paid)} $</strong></div></div>
+    <div class="actions" style="margin:12px 0"><button class="btn btn-primary" onclick="placeholder('إضافة طلب')">＋ إضافة طلب</button><button class="btn btn-success" onclick="paymentFormCustomer('${id}')">💰 إضافة دفعة</button></div>
+    <h3>الطلبات</h3>
+    ${requests.length ? requests.map((r) => `<div class="card"><div class="row"><strong>${esc(r.number)}</strong><span>${esc(r.product||"")}</span></div><div>${money(r.totalUSD)} $ | ${money(r.totalIQD)} د.ع</div><div class="muted">${esc(r.status||"")} — ${formatDate(r.dateTime)}</div></div>`).join("") : `<div class="empty">لا توجد طلبات.</div>`}
+    <h3>الدفعات</h3>
+    ${payments.length ? payments.map((p) => `<div class="card"><div class="row"><strong>${esc(p.number)}</strong><span>${money(p.usd)} $</span></div><div class="muted">${formatDate(p.dateTime)}</div></div>`).join("") : `<div class="empty">لا توجد دفعات.</div>`}`;
+}
+
+async function paymentFormCustomer(customerId) { await paymentForm("customer", customerId); }
+async function paymentFormCompany(companyId) { await paymentForm("company", companyId); }
+
+async function paymentForm(kind, id) {
+  const entity = await getRecord(kind === "customer" ? "customers" : "companies", id);
+  const modal = $("#modal"); modal.classList.remove("hidden");
+  modal.innerHTML = `
+    <div class="modal-box"><div class="modal-title">إضافة دفعة</div>
+      <div class="field"><label>${kind === "customer" ? "العميل" : "الشركة"}</label><input disabled value="${esc(entity?.name||"")}"></div>
+      <div class="field"><label>المبلغ *</label><input id="pAmount" type="number" step="1" min="1"></div>
+      <div class="field"><label>العملة</label><select id="pCurrency"><option value="USD">USD</option><option value="IQD">IQD</option></select></div>
+      <div class="field"><label>سعر الصرف *</label><input id="pRate" type="number" step="0.01" min="0"></div>
+      <div class="field"><label>التاريخ والوقت</label><input id="pDate" type="datetime-local" value="${nowLocal()}"></div>
+      <div class="field"><label>ملاحظات</label><textarea id="pNotes"></textarea></div>
+      <div class="form-actions"><button class="btn btn-light" onclick="closeModal()">إلغاء</button><button class="btn btn-primary" onclick="savePayment('${kind}','${id}')">حفظ</button></div>
+    </div>`;
+}
+
+async function savePayment(kind, id) {
+  const amount = Number($("#pAmount").value);
+  const rate = Number($("#pRate").value);
+  if (!Number.isInteger(amount) || amount <= 0 || rate <= 0) { toast("المبلغ يجب أن يكون عددًا صحيحًا وسعر الصرف أكبر من صفر"); return; }
+  const customer = kind === "customer" ? await getRecord("customers", id) : null;
+  const conversion = convertAmount(amount, $("#pCurrency").value, rate);
+  const payment = {
+    id: uid("payment"), number: await nextNumber("paymentSeq", "#P"),
+    type: kind === "customer" ? "دفعة عميل" : "دفعة شركة",
+    customerId: kind === "customer" ? id : null,
+    companyId: kind === "company" ? id : (customer?.companyId || null),
+    originalAmount: amount, currency: $("#pCurrency").value, rate,
+    usd: conversion.usd, iqd: conversion.iqd, dateTime: $("#pDate").value,
+    notes: $("#pNotes").value.trim(), createdAt: new Date().toISOString()
+  };
+  await putRecord("payments", payment);
+  if (payment.companyId) await recalcCompany(payment.companyId);
+  closeModal(); toast("تم حفظ الدفعة"); render();
+}
+
+async function renderPayments(app) {
+  const payments = (await getAll("payments")).sort((a,b) => String(b.dateTime||"").localeCompare(String(a.dateTime||"")));
+  app.innerHTML = `<div class="section-head"><div class="section-title">الدفعات</div></div>${payments.length ? payments.map((p) => `<div class="card"><div class="row"><strong>${esc(p.number)}</strong><span>${esc(p.type)}</span></div><div>${money(p.usd)} $ | ${money(p.iqd)} د.ع</div><div class="muted">${formatDate(p.dateTime)}</div></div>`).join("") : `<div class="empty">لا توجد دفعات.</div>`}`;
+}
+
+async function recalcCompany(companyId) {
+  if (!companyId) return;
+  const company = await getRecord("companies", companyId);
+  if (!company) return;
+  const requests = (await getAll("requests")).filter((x) => x.companyId === companyId);
+  const payments = (await getAll("payments")).filter((x) => x.companyId === companyId);
+  company.totalUSD = requests.reduce((s,x) => s + Number(x.totalUSD||0), 0) - payments.reduce((s,x) => s + Number(x.usd||0), 0);
+  company.totalIQD = requests.reduce((s,x) => s + Number(x.totalIQD||0), 0) - payments.reduce((s,x) => s + Number(x.iqd||0), 0);
+  await putRecord("companies", company);
+}
+
+async function renderExpenses(app) {
+  const expenses = (await getAll("expenses")).sort((a,b) => String(b.dateTime||"").localeCompare(String(a.dateTime||"")));
+  app.innerHTML = `<div class="section-head"><div class="section-title">المصروفات</div><button class="btn btn-primary" onclick="expenseForm()">＋ إضافة</button></div>${expenses.length ? expenses.map((x) => `<div class="card"><div class="row"><strong>#${esc(x.number)}</strong><span>${esc(x.type)}</span></div><div>${money(x.usd)} $ | ${money(x.iqd)} د.ع</div><div class="muted">${formatDate(x.dateTime)}</div><div class="list-actions"><button class="btn btn-light" onclick="expenseForm('${x.id}')">تعديل</button><button class="btn btn-danger" onclick="deleteExpense('${x.id}')">حذف</button></div></div>`).join("") : `<div class="empty">لا توجد مصروفات.</div>`}`;
+}
+
+async function expenseForm(id = "") {
+  const x = id ? await getRecord("expenses", id) : {};
+  const modal = $("#modal"); modal.classList.remove("hidden");
+  modal.innerHTML = `
+    <div class="modal-box"><div class="modal-title">${id ? "تعديل المصروف" : "إضافة مصروف"}</div>
+      <div class="field"><label>النوع</label><input id="eType" value="${esc(x.type||"أخرى")}"></div>
+      <div class="field"><label>المبلغ</label><input id="eAmount" type="number" step="0.01" min="0" value="${x.originalAmount ?? ""}"></div>
+      <div class="field"><label>العملة</label><select id="eCurrency"><option value="USD" ${x.currency === "USD" ? "selected" : ""}>USD</option><option value="IQD" ${x.currency === "IQD" ? "selected" : ""}>IQD</option></select></div>
+      <div class="field"><label>سعر الصرف</label><input id="eRate" type="number" step="0.01" min="0" value="${x.rate ?? ""}"></div>
+      <div class="field"><label>التاريخ والوقت</label><input id="eDate" type="datetime-local" value="${x.dateTime || nowLocal()}"></div>
+      <div class="field"><label>ملاحظات</label><textarea id="eNotes">${esc(x.notes||"")}</textarea></div>
+      <div class="form-actions"><button class="btn btn-light" onclick="closeModal()">إلغاء</button><button class="btn btn-primary" onclick="saveExpense('${id}')">حفظ</button></div>
+    </div>`;
+}
+
+async function saveExpense(id) {
+  const amount = Number($("#eAmount").value);
+  const rate = Number($("#eRate").value);
+  if (amount <= 0 || rate <= 0) { toast("أدخل المبلغ وسعر الصرف بشكل صحيح"); return; }
+  const old = id ? await getRecord("expenses", id) : null;
+  const conversion = convertAmount(amount, $("#eCurrency").value, rate);
+  await putRecord("expenses", {
+    id: id || uid("expense"), number: old?.number || await nextNumber("expenseSeq", "#E"),
+    type: $("#eType").value.trim() || "أخرى", originalAmount: amount,
+    currency: $("#eCurrency").value, rate, usd: conversion.usd, iqd: conversion.iqd,
+    dateTime: $("#eDate").value, notes: $("#eNotes").value.trim(),
+    createdAt: old?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString()
+  });
+  closeModal(); toast("تم حفظ المصروف"); render();
+}
+
+async function deleteExpense(id) {
+  const x = await getRecord("expenses", id);
+  if (!x) return;
+  if (!confirm("نقل المصروف إلى سلة المحذوفات؟")) return;
+  await putRecord("trash", { id: uid("trash"), originalId: id, type: "expense", deletedAt: new Date().toISOString(), data: x });
+  await deleteRecord("expenses", id);
+  toast("تم حذف المصروف"); render();
+}
+
+$("#homeBtn")?.addEventListener("click", home);
+$("#backBtn")?.addEventListener("click", goBack);
+$("#modal")?.addEventListener("click", (event) => {
+  if (event.target.id === "modal") closeModal();
+});
+
+openDB().then(render).catch((error) => {
+  console.error(error);
+  const app = $("#app");
+  if (app) app.innerHTML = `<div class="empty danger-text">تعذر فتح قاعدة البيانات المحلية.</div>`;
+});
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch((error) => console.error("Service Worker:", error));
+  });
+}
