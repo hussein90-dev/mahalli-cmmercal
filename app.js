@@ -18,7 +18,7 @@ function go(name,params={},push=true){if(push&&route.name!==name)historyStack.pu
 function back(){const p=historyStack.pop();if(p){route=p;render()}else home()}
 function home(){historyStack=[];route={name:'home',params:{}};render()}
 window.openAddCompany=()=>go('companyForm',{id:''});
-window.openAddCustomer=(companyId='')=>go('customerForm',{id:'',companyId});
+window.openAddCustomer=(companyId='')=>{route={name:'customerForm',params:{id:'',companyId}};historyStack.push({name:'company',params:{id:companyId}});render();};
 window.openAddExpense=()=>go('expenseForm',{id:''});
 window.editCompany=id=>go('companyForm',{id});
 window.editCustomer=(id,companyId='')=>go('customerForm',{id,companyId});
@@ -38,10 +38,11 @@ async function renderCompany(a,id){
  const cs=(await getAll('customers')).filter(x=>x.companyId===id).sort((x,y)=>String(y.createdAt||'').localeCompare(String(x.createdAt||'')));
  a.innerHTML=`<div class="section-head"><div class="section-title">${esc(c.name)}</div><button id="editCompanyBtn" class="btn btn-light">تعديل</button></div>
  <div class="total-box"><div class="total">الدولار<strong>${money(c.totalUSD)} $</strong></div><div class="total">الدينار<strong>${money(c.totalIQD)} د.ع</strong></div></div>
- <div class="actions" style="margin-bottom:12px"><button id="addCustomerBtn" type="button" class="btn btn-primary">＋ إضافة عميل</button><button id="addRequestBtn" type="button" class="btn btn-primary">＋ إضافة طلب</button><button id="addCompanyPaymentBtn" type="button" class="btn btn-success">💰 إضافة دفعة للشركة</button></div>
+ <div class="actions" style="margin-bottom:12px"><button id="addCustomerBtn" type="button" class="btn btn-primary" onclick="window.openAddCustomer('${esc(id)}')">＋ إضافة عميل</button><button id="addRequestBtn" type="button" class="btn btn-primary">＋ إضافة طلب</button><button id="addCompanyPaymentBtn" type="button" class="btn btn-success">💰 إضافة دفعة للشركة</button></div>
  ${cs.length?cs.map(x=>`<div class="card"><div class="row"><div><strong>${esc(x.name)}</strong><div class="muted">${esc(x.phone||'')}</div></div></div><div class="list-actions"><button class="btn btn-light customer-open" data-id="${esc(x.id)}">فتح</button><button class="btn btn-light customer-edit" data-id="${esc(x.id)}">تعديل</button></div></div>`).join(''):'<div class="empty">لا يوجد عملاء لهذه الشركة.</div>'}`;
  $('#editCompanyBtn')?.addEventListener('click',()=>window.editCompany(id));
  $('#addCustomerBtn')?.addEventListener('click',()=>window.openAddCustomer(id));
+ $('#addCustomerBtn')?.addEventListener('touchend',e=>{e.preventDefault();window.openAddCustomer(id)},{passive:false});
  $('#addRequestBtn')?.addEventListener('click',()=>window.placeholder('إضافة طلب'));
  $('#addCompanyPaymentBtn')?.addEventListener('click',()=>window.placeholder('إضافة دفعة للشركة'));
  a.querySelectorAll('.customer-open').forEach(b=>b.addEventListener('click',()=>window.openCustomer(b.dataset.id)));
